@@ -1,4 +1,3 @@
-
 from sklearn.mixture import GaussianMixture
 from scipy.sparse import csr_matrix
 from scipy.stats.distributions import chi2
@@ -9,12 +8,41 @@ import scanpy as sc
 import matplotlib.pyplot as plt
 import seaborn as sns
 from rnaseqtools.biomart_mapping import biomart_query_all
+import tqdm
 
 """
 to determine the CNV on a very coarse, chromosome arm scale
 
 somehow related to this CONICS paper (I forgot)
 """
+
+
+def chromosome_arm_detection(adata, plotting=True):
+    normFactor = calcNormFactors(adata)
+    df_coord = read_chromosome_arms_coords()
+    df = []
+    prob_df = {}
+    # for idf, row in tqdm.tqdm(df_coord.iterrows()):
+    for idf, row in df_coord.iterrows():
+        genes = get_genes_in_genomic_region(adata,
+                                            row['Chrom'],
+                                            row['Start'],
+                                            row['End'])
+        if len(genes) < 100:
+            print(f'Not enough genes for {idf}. skipping')
+            continue
+
+        d, prob_vector, Y = plotChrEnichment(adata, genes, normFactor, plotting=plotting)
+        plt.title(idf)
+        d['idf'] = idf
+        df.append(d)
+
+        prob_df[idf] =prob_vector
+
+    df = pd.DataFrame(df)
+    prob_df = pd.DataFrame(prob_df, index=adata.obs.index)
+
+    return df, prob_df
 
 
 def likelihood_ratio(llmin, llmax, degrees_of_freedom):
@@ -77,9 +105,10 @@ def read_chromosome_arms_coords():
     df = pd.read_csv('chromosome_arm_positions_grch38.txt', sep='\t').set_index('Idf')
     df['Chrom'] = df['Chrom'].apply(str)
 
-    dfx = pd.DataFrame([{'Idf': 'Xp', 'Chrom': 'X', 'Start':0, 'End': 60_000_000, 'Length': 60_000_000},
-                        {'Idf': 'Xq', 'Chrom': 'X', 'Start':60_000_000, 'End': 156_000_000, 'Length': 96000000},
-                        ]).set_index('Idf')
+    dfx = pd.DataFrame([
+        {'Idf': 'Xp', 'Chrom': 'X', 'Start': 0, 'End': 60_000_000, 'Length': 60_000_000},
+        {'Idf': 'Xq', 'Chrom': 'X', 'Start': 60_000_000, 'End': 156_000_000, 'Length': 96000000},
+    ]).set_index('Idf')
     df = df.append(dfx)
     return df
 
