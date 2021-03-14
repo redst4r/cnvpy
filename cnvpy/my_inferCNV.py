@@ -6,10 +6,11 @@ from sctools.scplotting import godsnot_64
 import fastcluster
 import seaborn as sns
 from scipy.sparse import issparse
+import matplotlib.patches as mpatches
 
 CHROMOSOMES = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10',
-               '11', '12', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22',
-               'X']
+               '11', '12', '13', '14', '15', '16', '17', '18', '19', '20',
+               '21', '22', 'X']
 
 
 def filter_genes(A, B, min_cells):
@@ -33,10 +34,12 @@ def get_pyramid_weighting(gene_window):
 
 
 def smoothed_expression(adata, chromosome, gene_window=101, offset=2):
-
+    """
+    smoothing gene expression on a chromosome via a sliding window
+    """
     assert gene_window % 2 == 1, 'gene window must be odd number'
-    constant_weighting = np.ones(gene_window)
-    constant_weighting = constant_weighting / constant_weighting.sum()
+    # constant_weighting = np.ones(gene_window)
+    # constant_weighting = constant_weighting / constant_weighting.sum()
 
     weight_scheme = get_pyramid_weighting(gene_window).reshape(1, -1)
 
@@ -60,6 +63,9 @@ def smoothed_expression(adata, chromosome, gene_window=101, offset=2):
 
 
 def smoothed_expression_all_chromosomes(adata, gene_window=101):
+    """
+    smoothing gene expression on a chromosome via a sliding window
+    """
     X = []
     pos = []
     for chromosome in tqdm.tqdm(CHROMOSOMES):
@@ -74,21 +80,24 @@ def smoothed_expression_all_chromosomes(adata, gene_window=101):
 
 def my_inferCNV(adata, ref_field, ref_groups):
 
+    # Note: the .values is important otherwise the `in` doesnt work!?
+    assert all([g in adata.obs[ref_field].values for g in ref_groups]), f"some groups dont exist in {ref_field}"
+
     # check if is a count matrix: we want lognormlaized!
     d = adata.X-adata.X.astype(int)
     if issparse(adata.X):
         if d.nnz == 0:
             raise ValueError('Data should be normlaized and logtransformed!')
     else:
-        if np.all(d==0):
+        if np.all(d == 0):
             raise ValueError('Data should be normlaized and logtransformed!')
 
     Qnormal = adata[adata.obs[ref_field].isin(ref_groups)]
     Qtumor = adata[~adata.obs[ref_field].isin(ref_groups)]
 
     gene_ix = filter_genes(Qnormal, Qtumor, 10)
-    Qnormal = Qnormal[:,gene_ix]
-    Qtumor = Qtumor[:,gene_ix]
+    Qnormal = Qnormal[:, gene_ix]
+    Qtumor = Qtumor[:, gene_ix]
 
     # center based on the reference, before smoothing!
     if issparse(adata.X):
@@ -103,40 +112,67 @@ def my_inferCNV(adata, ref_field, ref_groups):
     Qnormal.X = np.clip(Qnormal.X, -3, 3)
     Qtumor.X = np.clip(Qtumor.X, -3, 3)
 
-    s, s_chr = smoothed_expression_all_chromosomes(Qtumor)
-    t, t_chr = smoothed_expression_all_chromosomes(Qnormal)
+    smoothed_tumor, tumor_chr = smoothed_expression_all_chromosomes(Qtumor)
+    smoothed_normal, normal_chr = smoothed_expression_all_chromosomes(Qnormal)
 
     # center each cell at its median expression (assumption: most genes wont be CNV)
-    s = s - np.median(s, axis=1, keepdims=True)
-    t = t - np.median(t, axis=1, keepdims=True)
+    smoothed_tumor = smoothed_tumor - np.median(smoothed_tumor, axis=1, keepdims=True)
+    smoothed_normal = smoothed_normal - np.median(smoothed_normal, axis=1, keepdims=True)
 
     # relative to the normal cells
-    relative_s = s - t.mean(0, keepdims=True)
-    relative_t = t - t.mean(0, keepdims=True)
+    relative_tumor = smoothed_tumor - smoothed_normal.mean(0, keepdims=True)
+    relative_normal = smoothed_normal - smoothed_normal.mean(0, keepdims=True)
 
     # ubdo log
-    exp_relative_s = np.exp(relative_s)
-    exp_relative_t = np.exp(relative_t)
+    exp_relative_tumor = np.exp(relative_tumor)
+    exp_relative_normal = np.exp(relative_normal)
 
-    S = AnnData(exp_relative_s, obs=Qtumor.obs, var=s_chr)
-    T = AnnData(exp_relative_t, obs=Qnormal.obs, var=t_chr)
+    CNV_TUMOR = AnnData(exp_relative_tumor, obs=Qtumor.obs, var=tumor_chr)
+    CNV_NORMAL = AnnData(exp_relative_normal, obs=Qnormal.obs, var=normal_chr)
 
-    return exp_relative_s, exp_relative_t, S, T
+    return CNV_NORMAL, CNV_TUMOR
 
 
-def plotting(S: AnnData, row_color_field):
+def plotting(S: AnnData, row_color_fields):
+
+    if not isinstance(row_color_fields, list):
+        row_color_fields = [row_color_fields]
+
     chrom_colormap = {c: godsnot_64[i] for i, c in enumerate(CHROMOSOMES)}
     chrom_colors = [chrom_colormap[i] for i in S.var.chromosome_name]
 
-    celltypes = S.obs[row_color_field].unique()
-    colormap = {ct: godsnot_64[i] for i, ct in enumerate(celltypes)}
-    celltype_colors = [colormap[ct] for ct in S.obs[row_color_field]]
+    color_df = []
+    colormaps = {}
+    for f in row_color_fields:
+        types = S.obs[f].unique()
+        colormap = {ct: godsnot_64[i] for i, ct in enumerate(types)}
+        color_vector = S.obs[f].apply(lambda x: colormap[x])
+        color_df.append(color_vector)
+        colormaps[f]= colormap
+        # celltype_colors = [colormap[ct] for ct in S.obs[row_color_field]]
+    color_df = pd.DataFrame(color_df).T
 
+    print('Clustering')
     linkage_s = fastcluster.linkage(S.X, method='ward')
-    heatmapplot = sns.clustermap(S.X, col_cluster=False, cmap="bwr",
-                                 vmin=0.5, vmax=1.5,
-                                 row_linkage=linkage_s,
-                                 col_colors=chrom_colors,
-                                 row_colors=celltype_colors
-                                )
-    return heatmapplot
+
+    print('Drawing')
+    X = pd.DataFrame(S.X, index=S.obs.index)
+    g = sns.clustermap(X, col_cluster=False, cmap="bwr",
+                       vmin=0.5, vmax=1.5,
+                       row_linkage=linkage_s,
+                       col_colors=chrom_colors,
+                       row_colors=color_df,
+                       xticklabels=False,
+                       yticklabels=False
+                       )
+
+    leg = []
+    for f in row_color_fields:
+        legend_TN = [mpatches.Patch(color=color, label=ct) for ct, color in colormaps[f].items()]
+        leg.extend(legend_TN)
+
+    l2 = g.ax_heatmap.legend(loc='center left', bbox_to_anchor=(1.01, 0.85),
+                             handles=leg, frameon=True)
+    l2.set_title(title=f, prop={'size': 10})
+
+    return g

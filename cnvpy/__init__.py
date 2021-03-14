@@ -1,1 +1,2 @@
-from cnvpy.armsCNV import annotate_genomic_coordinates, chromosome_arm_detection
+from cnvpy.armsCNV import chromosome_arm_detection
+from cnvpy.utils import annotate_genomic_coordinates
