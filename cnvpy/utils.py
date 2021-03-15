@@ -29,7 +29,7 @@ def annotate_genomic_coordinates(adata, join_on_symbol=False):
     # in case we couldnt find info
     # this should only happen in the join_symbol case!
     shared_genes = [_ for _ in adata.var.index if _ in var.index]
-    adata = adata[:, shared_genes]
+    adata = adata[:, shared_genes].copy()  # NO VIEWS!
 
     adata.var = var
     adata.var.chromosome_name = adata.var.chromosome_name.replace({np.nan: 'NA'})

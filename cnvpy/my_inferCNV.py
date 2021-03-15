@@ -90,14 +90,21 @@ def smoothed_expression_all_chromosomes(adata, gene_window=101):
     return X, pos  # , chrom_indicator
 
 
+def split_tumor_normal(adata, ref_field, ref_groups):
+
+    Qnormal = adata[adata.obs[ref_field].isin(ref_groups)]
+    Qtumor = adata[~adata.obs[ref_field].isin(ref_groups)]
+    return Qnormal, Qtumor
+
+
 def _preprocess(adata, ref_field, ref_groups):
     """
     - splitting into reference samples and tumor samples
     - centering on the reference
     - clipping
     """
-    Qnormal = adata[adata.obs[ref_field].isin(ref_groups)]
-    Qtumor = adata[~adata.obs[ref_field].isin(ref_groups)]
+
+    Qnormal, Qtumor = split_tumor_normal(adata, ref_field, ref_groups)
 
     gene_ix = filter_genes(Qnormal, Qtumor, 10)
     Qnormal = Qnormal[:, gene_ix]
@@ -105,6 +112,7 @@ def _preprocess(adata, ref_field, ref_groups):
 
     # center based on the reference, before smoothing!
     if issparse(adata.X):
+        print('loading full X.A!!')
         Qnormal.X = Qnormal.X.A
         Qtumor.X = Qtumor.X.A
 
@@ -191,7 +199,7 @@ def plotting(S: AnnData, row_color_fields):
         colormap = {ct: godsnot_64[i] for i, ct in enumerate(types)}
         color_vector = S.obs[f].apply(lambda x: colormap[x])
         color_df.append(color_vector)
-        colormaps[f]= colormap
+        colormaps[f] = colormap
         # celltype_colors = [colormap[ct] for ct in S.obs[row_color_field]]
     color_df = pd.DataFrame(color_df).T
 

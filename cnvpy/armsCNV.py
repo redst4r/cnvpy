@@ -16,9 +16,18 @@ somehow related to this CONICS paper (I forgot)
 """
 
 
-def chromosome_arm_detection(adata, plotting=True):
+def chromosome_arm_detection(adata, plotting=True, arms=None):
+    """
+    main function of this module!
+    finds chromosome arm changes  that might be present in the data
+    """
     normFactor = calcNormFactors(adata)
     df_coord = read_chromosome_arms_coords()
+
+    if arms:
+        assert isinstance(arms, list)
+        df_coord = df_coord.loc[arms]
+
     df = []
     prob_df = {}
     # for idf, row in tqdm.tqdm(df_coord.iterrows()):
@@ -36,7 +45,7 @@ def chromosome_arm_detection(adata, plotting=True):
         d['idf'] = idf
         df.append(d)
 
-        prob_df[idf] =prob_vector
+        prob_df[idf] = prob_vector
 
     df = pd.DataFrame(df)
     prob_df = pd.DataFrame(prob_df, index=adata.obs.index)

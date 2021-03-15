@@ -1,6 +1,7 @@
 import pandas as pd
 import os
 import tempfile
+from scipy.sparse import issparse
 
 
 def adata2inferCNV(adata, annotation_field, folder):
@@ -11,7 +12,7 @@ def adata2inferCNV(adata, annotation_field, folder):
     os.mkdir(folder)
 #     tempdir = tempfile.mkdtemp()
     tempdir = folder
-    df = pd.DataFrame(adata.X.A)
+    df = pd.DataFrame(adata.X.A) if issparse(adata.X) else pd.DataFrame(adata.X)
     df.index = adata.obs.index
     df.columns = adata.var.index
     print('writing count matrix')
