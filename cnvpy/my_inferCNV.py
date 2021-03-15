@@ -78,20 +78,12 @@ def smoothed_expression_all_chromosomes(adata, gene_window=101):
     return X, pos  # , chrom_indicator
 
 
-def my_inferCNV(adata, ref_field, ref_groups):
-
-    # Note: the .values is important otherwise the `in` doesnt work!?
-    assert all([g in adata.obs[ref_field].values for g in ref_groups]), f"some groups dont exist in {ref_field}"
-
-    # check if is a count matrix: we want lognormlaized!
-    d = adata.X-adata.X.astype(int)
-    if issparse(adata.X):
-        if d.nnz == 0:
-            raise ValueError('Data should be normlaized and logtransformed!')
-    else:
-        if np.all(d == 0):
-            raise ValueError('Data should be normlaized and logtransformed!')
-
+def _preprocess(adata, ref_field, ref_groups):
+    """
+    - splitting into reference samples and tumor samples
+    - centering on the reference
+    - clipping
+    """
     Qnormal = adata[adata.obs[ref_field].isin(ref_groups)]
     Qtumor = adata[~adata.obs[ref_field].isin(ref_groups)]
 
@@ -112,8 +104,16 @@ def my_inferCNV(adata, ref_field, ref_groups):
     Qnormal.X = np.clip(Qnormal.X, -3, 3)
     Qtumor.X = np.clip(Qtumor.X, -3, 3)
 
-    smoothed_tumor, tumor_chr = smoothed_expression_all_chromosomes(Qtumor)
-    smoothed_normal, normal_chr = smoothed_expression_all_chromosomes(Qnormal)
+    return Qnormal, Qtumor
+
+
+def _postprocess(smoothed_normal, smoothed_tumor):
+    """
+    after smoothing on the chromosome:
+    - center each cell at median
+    - center against reference
+    - undo the log
+    """
 
     # center each cell at its median expression (assumption: most genes wont be CNV)
     smoothed_tumor = smoothed_tumor - np.median(smoothed_tumor, axis=1, keepdims=True)
@@ -126,6 +126,37 @@ def my_inferCNV(adata, ref_field, ref_groups):
     # ubdo log
     exp_relative_tumor = np.exp(relative_tumor)
     exp_relative_normal = np.exp(relative_normal)
+
+    return exp_relative_normal, exp_relative_tumor
+
+
+def my_inferCNV(adata, ref_field, ref_groups, verbose=True):
+
+    # Note: the .values is important otherwise the `in` doesnt work!?
+    assert all([g in adata.obs[ref_field].values for g in ref_groups]), f"some groups dont exist in {ref_field}"
+
+    # check if is a count matrix: we want lognormlaized!
+    d = adata.X-adata.X.astype(int)
+    if issparse(adata.X):
+        if d.nnz == 0:
+            raise ValueError('Data should be normlaized and logtransformed!')
+    else:
+        if np.all(d == 0):
+            raise ValueError('Data should be normlaized and logtransformed!')
+
+    if verbose:
+        print('Preprocessing')
+    Qnormal, Qtumor = _preprocess(adata, ref_field, ref_groups)
+    if verbose:
+        print('smoothing Tumor')
+    smoothed_tumor, tumor_chr = smoothed_expression_all_chromosomes(Qtumor)
+    if verbose:
+        print('smoothing normal')
+    smoothed_normal, normal_chr = smoothed_expression_all_chromosomes(Qnormal)
+
+    if verbose:
+        print('postprocessing')
+    exp_relative_normal, exp_relative_tumor = _postprocess(smoothed_normal, smoothed_tumor)
 
     CNV_TUMOR = AnnData(exp_relative_tumor, obs=Qtumor.obs, var=tumor_chr)
     CNV_NORMAL = AnnData(exp_relative_normal, obs=Qnormal.obs, var=normal_chr)
