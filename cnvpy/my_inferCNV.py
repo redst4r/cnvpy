@@ -46,10 +46,22 @@ def smoothed_expression(adata, chromosome, gene_window=101, offset=2):
     q = adata.var.query('chromosome_name==@chromosome').sort_values('start_position')
     smoothed = []
     pos = []
+
+    # for fast lookup, generate a table of genename -> index(int) in adata.X[,]
+    # such that adata[, gene].X == adata.X[:, gene_index[gene]]
+    gene_index = {gene: ix for ix, gene in enumerate(adata.var.index)}
+    X = adata.X  # this causes alot of overhead (its not a simple attribute lokup when adata is a VIEW!!). Hence do it outside the loop
     for i in range(0, len(q)-gene_window, offset):
         genes = q.iloc[i:(i+gene_window)].index
-#         sum_inwindow = adata[:,genes.symbol].X.mean(axis=1).toarray()
-        sum_inwindow = np.sum(adata[:, genes].X * weight_scheme, axis=1)
+
+        if False:
+            # somehow this indexing on Adata is very slow, lots of overhead with checking cat-variables etc..
+            sum_inwindow = np.sum(adata[:, genes].X * weight_scheme, axis=1)
+        else:
+            # faster, but uglier
+            ix = [gene_index[g] for g in genes]
+            sum_inwindow = np.sum(X[:, ix] * weight_scheme, axis=1)
+
         smoothed.append(sum_inwindow)
         pos.append(i)
     if len(smoothed) > 1:
