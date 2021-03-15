@@ -27,7 +27,11 @@ def filter_genes(A, B, min_cells):
 
 
 def get_pyramid_weighting(gene_window):
-    pyramid_weighting = np.linspace(0, 1, gene_window//2).tolist() + [1] + np.linspace(0, 1, gene_window//2).tolist()[::-1]
+    ramp = np.linspace(0, 1, gene_window//2).tolist()
+    # actually, should be this, the above has a flat part in the center
+    # ramp = np.linspace(0, 1, 1+gene_window//2).tolist()[:-1]
+
+    pyramid_weighting = ramp + [1] + ramp[::-1]
     pyramid_weighting = np.array(pyramid_weighting)
     pyramid_weighting = pyramid_weighting / pyramid_weighting.sum()
     return pyramid_weighting
@@ -46,7 +50,7 @@ def smoothed_expression(adata, chromosome, gene_window=101, offset=2):
     q = adata.var.query('chromosome_name==@chromosome').sort_values('start_position')
     smoothed = []
     pos = []
-
+    center_gene = []
     # for fast lookup, generate a table of genename -> index(int) in adata.X[,]
     # such that adata[, gene].X == adata.X[:, gene_index[gene]]
     gene_index = {gene: ix for ix, gene in enumerate(adata.var.index)}
@@ -64,13 +68,19 @@ def smoothed_expression(adata, chromosome, gene_window=101, offset=2):
 
         smoothed.append(sum_inwindow)
         pos.append(i)
+        center_gene.append(genes[(gene_window-1)//2])
+
     if len(smoothed) > 1:
         smoothed = np.stack(smoothed, axis=1)
     else:
         smoothed = None
 
-    pos = pd.DataFrame(pos, columns=['position'])
+    pos = pd.DataFrame(pos, columns=['start'])
     pos['chromosome_name'] = chromosome
+    pos['end'] = pos['start'] + gene_window
+    pos['middle'] = pos['start'] + (gene_window - 1) // 2
+    pos['middle_gene'] = center_gene
+
     return pos, smoothed
 
 
@@ -184,7 +194,7 @@ def my_inferCNV(adata, ref_field, ref_groups, verbose=True):
     return CNV_NORMAL, CNV_TUMOR
 
 
-def plotting(S: AnnData, row_color_fields):
+def plotting(S: AnnData, row_color_fields, clustering=None, figsize=(20, 20)):
 
     if not isinstance(row_color_fields, list):
         row_color_fields = [row_color_fields]
@@ -203,18 +213,20 @@ def plotting(S: AnnData, row_color_fields):
         # celltype_colors = [colormap[ct] for ct in S.obs[row_color_field]]
     color_df = pd.DataFrame(color_df).T
 
-    print('Clustering')
-    linkage_s = fastcluster.linkage(S.X, method='ward')
+    if clustering is None:
+        print('Clustering')
+        clustering = fastcluster.linkage(S.X, method='ward')
 
     print('Drawing')
     X = pd.DataFrame(S.X, index=S.obs.index)
     g = sns.clustermap(X, col_cluster=False, cmap="bwr",
                        vmin=0.5, vmax=1.5,
-                       row_linkage=linkage_s,
+                       row_linkage=clustering,
                        col_colors=chrom_colors,
                        row_colors=color_df,
                        xticklabels=False,
-                       yticklabels=False
+                       yticklabels=False,
+                       figsize=figsize
                        )
 
     leg = []
