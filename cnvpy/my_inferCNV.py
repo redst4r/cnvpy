@@ -107,21 +107,19 @@ def split_tumor_normal(adata, ref_field, ref_groups):
     return Qnormal, Qtumor
 
 
-def _preprocess(adata, ref_field, ref_groups):
+def _preprocess(Qnormal, Qtumor):
     """
     - splitting into reference samples and tumor samples
     - centering on the reference
     - clipping
     """
 
-    Qnormal, Qtumor = split_tumor_normal(adata, ref_field, ref_groups)
-
     gene_ix = filter_genes(Qnormal, Qtumor, 10)
     Qnormal = Qnormal[:, gene_ix]
     Qtumor = Qtumor[:, gene_ix]
 
     # center based on the reference, before smoothing!
-    if issparse(adata.X):
+    if issparse(Qnormal.X) or issparse(Qtumor.X):
         print('loading full X.A!!')
         Qnormal.X = Qnormal.X.A
         Qtumor.X = Qtumor.X.A
@@ -176,7 +174,10 @@ def my_inferCNV(adata, ref_field, ref_groups, verbose=True):
 
     if verbose:
         print('Preprocessing')
-    Qnormal, Qtumor = _preprocess(adata, ref_field, ref_groups)
+
+    Qnormal, Qtumor = split_tumor_normal(adata, ref_field, ref_groups)
+
+    Qnormal, Qtumor = _preprocess(Qnormal, Qtumor)
     if verbose:
         print('smoothing Tumor')
     smoothed_tumor, tumor_chr = smoothed_expression_all_chromosomes(Qtumor)
@@ -194,7 +195,7 @@ def my_inferCNV(adata, ref_field, ref_groups, verbose=True):
     return CNV_NORMAL, CNV_TUMOR
 
 
-def plotting(S: AnnData, row_color_fields, clustering=None, figsize=(20, 20)):
+def plotting(S: AnnData, row_color_fields, clustering=None, figsize=(20, 20), vmin=0.5, vmax=1.5):
 
     if not isinstance(row_color_fields, list):
         row_color_fields = [row_color_fields]
@@ -220,7 +221,7 @@ def plotting(S: AnnData, row_color_fields, clustering=None, figsize=(20, 20)):
     print('Drawing')
     X = pd.DataFrame(S.X, index=S.obs.index)
     g = sns.clustermap(X, col_cluster=False, cmap="bwr",
-                       vmin=0.5, vmax=1.5,
+                       vmin=vmin, vmax=vmax,
                        row_linkage=clustering,
                        col_colors=chrom_colors,
                        row_colors=color_df,
