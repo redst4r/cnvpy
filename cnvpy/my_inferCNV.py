@@ -7,10 +7,64 @@ import fastcluster
 import seaborn as sns
 from scipy.sparse import issparse
 import matplotlib.patches as mpatches
+from scipy.cluster.hierarchy import cut_tree
 
 CHROMOSOMES = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10',
                '11', '12', '13', '14', '15', '16', '17', '18', '19', '20',
                '21', '22', 'X']
+
+
+class inferCNV():
+
+    def __init__(self, verbose=True):
+        self.CNV_NORMAL = None  # where we store the smoothed data
+        self.CNV_TUMOR = None
+        self.linkage_normal = None
+        self.linkage_tumor = None
+        self.verbose = verbose
+
+    def infer(self, adata, ref_field, ref_groups):
+        """
+        running the inferCNV method, basically smoothing along the chromosomes
+        """
+        self.CNV_NORMAL, self.CNV_TUMOR = my_inferCNV(
+            adata,
+            ref_field,
+            ref_groups,
+            verbose=self.verbose)
+
+    def cluster(self):
+        """
+        cluster the CNV profiles of both N/T
+        """
+        self.linkage_normal = fastcluster.linkage(self.CNV_NORMAL.X, method='ward')
+        self.linkage_tumor = fastcluster.linkage(self.CNV_TUMOR.X, method='ward')
+
+    def plotting(self, row_color_fields, which, denoise=True, vmin=0.5, vmax=1.5):
+        """
+        plot the heatmap of the CNV profiles of either N or Tv
+        """
+        assert which in ['normal', 'tumor']
+        assert self.linkage_normal is not None and self.linkage_tumor is not None, "not clustered yet, run .cluster()"
+        S = self.CNV_NORMAL if which == 'normal' else self.CNV_TUMOR
+        clustering = self.linkage_normal if which == 'normal' else self.linkage_tumor
+        plotting(S, row_color_fields, clustering=clustering, vmin=vmin, vmax=vmax)
+
+    def annotate_clusters(self, n_clusters_normal, n_clusters_tumor):
+        """
+        truncating the hierachical tree of the CNV clusters.
+        Returns dataframe which annotate for each cell the CNV cluster
+
+        """
+        N_clusters = cut_tree(self.linkage_normal, n_clusters=n_clusters_normal).flatten().astype('str')
+        T_clusters = cut_tree(self.linkage_tumor, n_clusters=n_clusters_tumor).flatten().astype('str')
+
+        df_normal = pd.DataFrame(N_clusters, columns=['CNVcluster'], index=self.CNV_NORMAL.obs.index)
+        df_normal['CNVcluster'] = 'N'+df_normal['CNVcluster']
+        df_tumor = pd.DataFrame(T_clusters, columns=['CNVcluster'], index=self.CNV_TUMOR.obs.index)
+        df_tumor['CNVcluster'] = 'T'+df_tumor['CNVcluster']
+
+        return df_normal, df_tumor
 
 
 def filter_genes(A, B, min_cells):
