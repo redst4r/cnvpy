@@ -26,6 +26,25 @@ def filter_genes(A, B, min_cells):
     return A.var.iloc[ix].index
 
 
+def denoising(Qnormal, Qtumor, sd_amp=1.5):
+    """
+    for each locus (var), look at the spread in the normal group.
+    Anything within (sd_amp * STD) is set to 0
+    """
+    mean_ref_vals = np.mean(Qnormal.X)
+    mean_ref_sd = np.std(Qnormal.X) * sd_amp
+
+    upper_bound = mean_ref_vals + mean_ref_sd
+    lower_bound = mean_ref_vals - mean_ref_sd
+
+    mask = np.logical_and(Qtumor.X > lower_bound, Qtumor.X < upper_bound)
+    Qtumor.X[mask] = mean_ref_vals
+
+    mask = np.logical_and(Qnormal.X > lower_bound, Qnormal.X < upper_bound)
+    Qnormal.X[mask] = mean_ref_vals
+
+    return Qnormal, Qtumor
+
 def get_pyramid_weighting(gene_window):
     ramp = np.linspace(0, 1, gene_window//2).tolist()
     # actually, should be this, the above has a flat part in the center
