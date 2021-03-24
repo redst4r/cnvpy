@@ -40,7 +40,26 @@ class inferCNV():
         self.linkage_normal = fastcluster.linkage(self.CNV_NORMAL.X, method='ward')
         self.linkage_tumor = fastcluster.linkage(self.CNV_TUMOR.X, method='ward')
 
-    def plotting(self, row_color_fields, which, denoise=True, vmin=0.5, vmax=1.5):
+    def cut_tree(self, n_clusters, which, key='cnv_cluster'):
+
+        clusters = cut_tree(self.linkage_tumor, n_clusters=n_clusters).flatten()
+        cnv_cluster_df = pd.DataFrame(
+            clusters,
+            index=self.CNV_TUMOR.obs.index if which == 'tumor' else self.CNV_NORMAL.obs.index,
+            columns=[key]
+        )
+        if which == 'tumor':
+            # if the label is already there, drop it and add the new clustering
+            if key in self.CNV_TUMOR.obs.columns:
+                self.CNV_TUMOR.obs.drop(key, axis=1, inplace=True)
+            self.CNV_TUMOR.obs = self.CNV_TUMOR.obs.merge(cnv_cluster_df, left_index=True, right_index=True, how='left')
+        else:
+            # if the label is already there, drop it and add the new clustering
+            if key in self.CNV_NORMAL.obs.columns:
+                self.CNV_NORMAL.obs.drop(key, axis=1, inplace=True)
+            self.CNV_NORMAL.obs = self.CNV_NORMAL.obs.merge(cnv_cluster_df, left_index=True, right_index=True, how='left')
+
+    def plotting(self, row_color_fields, which, denoise=True, vmin=0.5, vmax=1.5, figsize=(20, 20)):
         """
         plot the heatmap of the CNV profiles of either N or Tv
         """
@@ -48,7 +67,7 @@ class inferCNV():
         assert self.linkage_normal is not None and self.linkage_tumor is not None, "not clustered yet, run .cluster()"
         S = self.CNV_NORMAL if which == 'normal' else self.CNV_TUMOR
         clustering = self.linkage_normal if which == 'normal' else self.linkage_tumor
-        plotting(S, row_color_fields, clustering=clustering, vmin=vmin, vmax=vmax)
+        plotting(S, row_color_fields, clustering=clustering, vmin=vmin, vmax=vmax, figsize=figsize)
 
     def annotate_clusters(self, n_clusters_normal, n_clusters_tumor):
         """
