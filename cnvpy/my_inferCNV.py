@@ -279,7 +279,7 @@ def plotting(S: AnnData, row_color_fields, clustering=None, figsize=(20, 20), vm
     color_df = []
     colormaps = {}
     for f in row_color_fields:
-        types = S.obs[f].unique()
+        types = sorted(S.obs[f].unique())
         colormap = {ct: godsnot_64[i] for i, ct in enumerate(types)}
         color_vector = S.obs[f].apply(lambda x: colormap[x])
         color_df.append(color_vector)
