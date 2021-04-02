@@ -287,7 +287,11 @@ def my_inferCNV(adata, ref_field, ref_groups, verbose=True):
     return CNV_NORMAL, CNV_TUMOR
 
 
-def plotting(S: AnnData, row_color_fields, clustering=None, figsize=(20, 20), vmin=0.5, vmax=1.5):
+def is_categorical(array_like):
+    return array_like.dtype.name == 'category'
+
+
+def plotting(S: AnnData, row_color_fields, clustering=None, figsize=(20, 20), vmin=0.5, vmax=1.5, plot_dendrogram=True):
 
     if not isinstance(row_color_fields, list):
         row_color_fields = [row_color_fields]
@@ -298,7 +302,11 @@ def plotting(S: AnnData, row_color_fields, clustering=None, figsize=(20, 20), vm
     color_df = []
     colormaps = {}
     for f in row_color_fields:
-        types = sorted(S.obs[f].unique())
+        if is_categorical(S.obs[f]):
+            types = S.obs[f].cat.categories
+        else:
+            types = sorted(S.obs[f].unique())
+
         colormap = {ct: godsnot_64[i] for i, ct in enumerate(types)}
         color_vector = S.obs[f].apply(lambda x: colormap[x])
         color_df.append(color_vector)
@@ -321,6 +329,8 @@ def plotting(S: AnnData, row_color_fields, clustering=None, figsize=(20, 20), vm
                        yticklabels=False,
                        figsize=figsize
                        )
+    if not plot_dendrogram:
+        g.ax_row_dendrogram.set_visible(False)
 
     leg = []
     for f in row_color_fields:
