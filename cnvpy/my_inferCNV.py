@@ -99,24 +99,35 @@ def filter_genes(A, B, min_cells):
     return A.var.iloc[ix].index
 
 
-def denoising(Qnormal, Qtumor, sd_amp=1.5):
+def denoising(CNV, sd_amp=1.5):
     """
+    Denoising the CNV profile.
     for each locus (var), look at the spread in the normal group.
-    Anything within (sd_amp * STD) is set to 0
+    Anything within (sd_amp * STD) is set to 0.
+
+    This creates a new inferCNV object with the denoised profile.
+    The original clustering is preserved though!
     """
-    mean_ref_vals = np.mean(Qnormal.X)
-    mean_ref_sd = np.std(Qnormal.X) * sd_amp
+    mean_ref_vals = np.mean(CNV.CNV_NORMAL.X)
+    mean_ref_sd = np.std(CNV.CNV_NORMAL.X) * sd_amp
 
     upper_bound = mean_ref_vals + mean_ref_sd
     lower_bound = mean_ref_vals - mean_ref_sd
 
-    mask = np.logical_and(Qtumor.X > lower_bound, Qtumor.X < upper_bound)
-    Qtumor.X[mask] = mean_ref_vals
+    denoisedCNV = inferCNV()
 
-    mask = np.logical_and(Qnormal.X > lower_bound, Qnormal.X < upper_bound)
-    Qnormal.X[mask] = mean_ref_vals
+    mask = np.logical_and(CNV.CNV_TUMOR.X > lower_bound, CNV.CNV_TUMOR.X < upper_bound)
+    denoisedCNV.CNV_TUMOR = CNV.CNV_TUMOR.copy()
+    denoisedCNV.CNV_TUMOR.X[mask] = mean_ref_vals
 
-    return Qnormal, Qtumor
+    mask = np.logical_and(CNV.CNV_NORMAL.X > lower_bound, CNV.CNV_NORMAL.X < upper_bound)
+    denoisedCNV.CNV_NORMAL = CNV.CNV_NORMAL.copy()
+    denoisedCNV.CNV_NORMAL.X[mask] = mean_ref_vals
+
+    denoisedCNV.linkage_normal = CNV.linkage_normal.copy()
+    denoisedCNV.linkage_tumor = CNV.linkage_tumor.copy()
+    return denoisedCNV
+
 
 def get_pyramid_weighting(gene_window):
     ramp = np.linspace(0, 1, gene_window//2).tolist()
