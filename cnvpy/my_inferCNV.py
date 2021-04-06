@@ -59,7 +59,7 @@ class inferCNV():
                 self.CNV_NORMAL.obs.drop(key, axis=1, inplace=True)
             self.CNV_NORMAL.obs = self.CNV_NORMAL.obs.merge(cnv_cluster_df, left_index=True, right_index=True, how='left')
 
-    def plotting(self, row_color_fields, which, denoise=True, vmin=0.5, vmax=1.5, figsize=(20, 20)):
+    def plotting(self, row_color_fields, which, denoise=True, vmin=0.5, vmax=1.5, figsize=(20, 20), colormaps_row=None):
         """
         plot the heatmap of the CNV profiles of either N or Tv
         """
@@ -67,7 +67,7 @@ class inferCNV():
         assert self.linkage_normal is not None and self.linkage_tumor is not None, "not clustered yet, run .cluster()"
         S = self.CNV_NORMAL if which == 'normal' else self.CNV_TUMOR
         clustering = self.linkage_normal if which == 'normal' else self.linkage_tumor
-        plotting(S, row_color_fields, clustering=clustering, vmin=vmin, vmax=vmax, figsize=figsize)
+        return plotting(S, row_color_fields, clustering=clustering, vmin=vmin, vmax=vmax, figsize=figsize, colormaps_row=colormaps_row)
 
     def annotate_clusters(self, n_clusters_normal, n_clusters_tumor):
         """
@@ -302,7 +302,7 @@ def is_categorical(array_like):
     return array_like.dtype.name == 'category'
 
 
-def plotting(S: AnnData, row_color_fields, clustering=None, figsize=(20, 20), vmin=0.5, vmax=1.5, plot_dendrogram=True):
+def plotting(S: AnnData, row_color_fields, clustering=None, figsize=(20, 20), vmin=0.5, vmax=1.5, plot_dendrogram=True, colormaps_row=None):
 
     if not isinstance(row_color_fields, list):
         row_color_fields = [row_color_fields]
@@ -318,7 +318,12 @@ def plotting(S: AnnData, row_color_fields, clustering=None, figsize=(20, 20), vm
         else:
             types = sorted(S.obs[f].unique())
 
-        colormap = {ct: godsnot_64[i] for i, ct in enumerate(types)}
+        if colormaps_row is None or f not in colormaps_row:
+            cmap = godsnot_64
+            colormap = {ct: cmap[i] for i, ct in enumerate(types)}
+        else:
+            cmap = colormaps_row[f]
+            colormap = {ct: cmap[ct] for ct in types}
         color_vector = S.obs[f].apply(lambda x: colormap[x])
         color_df.append(color_vector)
         colormaps[f] = colormap
