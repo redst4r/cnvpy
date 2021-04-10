@@ -61,7 +61,7 @@ class inferCNV():
                 self.CNV_NORMAL.obs.drop(key, axis=1, inplace=True)
             self.CNV_NORMAL.obs = self.CNV_NORMAL.obs.merge(cnv_cluster_df, left_index=True, right_index=True, how='left')
 
-    def plotting(self, row_color_fields, which, denoise=True, vmin=0.5, vmax=1.5, figsize=(20, 20), colormaps_row=None):
+    def plotting(self, row_color_fields, which, denoise=True, vmin=0.5, vmax=1.5, figsize=(20, 20), colormaps_row=None, interesting_genes=None):
         """
         plot the heatmap of the CNV profiles of either N or Tv
         """
@@ -69,7 +69,14 @@ class inferCNV():
         assert self.linkage_normal is not None and self.linkage_tumor is not None, "not clustered yet, run .cluster()"
         S = self.CNV_NORMAL if which == 'normal' else self.CNV_TUMOR
         clustering = self.linkage_normal if which == 'normal' else self.linkage_tumor
-        return plotting(S, row_color_fields, clustering=clustering, vmin=vmin, vmax=vmax, figsize=figsize, colormaps_row=colormaps_row)
+
+        g = plotting(S, row_color_fields, clustering=clustering, vmin=vmin, vmax=vmax, figsize=figsize, colormaps_row=colormaps_row)
+        if interesting_genes:
+            genes_of_interest_dict = get_gene_coords(self, interesting_genes)
+            for gene, index in genes_of_interest_dict.items():
+                g.ax_heatmap.vlines(index,0, len(S))
+                g.ax_heatmap.text(index, 0, s=gene, fontdict={'size':20}, rotation=90)
+        return g
 
     def annotate_clusters(self, n_clusters_normal, n_clusters_tumor):
         """
