@@ -22,11 +22,13 @@ class inferCNV():
         self.linkage_normal = None
         self.linkage_tumor = None
         self.verbose = verbose
+        self.gene_var = None  # the adata.var from the original data; used to look up genomic coordinates
 
     def infer(self, adata, ref_field, ref_groups):
         """
         running the inferCNV method, basically smoothing along the chromosomes
         """
+        self.gene_var = adata.var.copy()
         self.CNV_NORMAL, self.CNV_TUMOR = my_inferCNV(
             adata,
             ref_field,
@@ -84,6 +86,45 @@ class inferCNV():
         df_tumor['CNVcluster'] = 'T'+df_tumor['CNVcluster']
 
         return df_normal, df_tumor
+
+
+def get_gene_coords(CNV, genenames):
+    """
+    locate a gene in the columns of the CNV heatmap
+    """
+    # get all gene-names of the windows
+    genemap = pd.concat([
+        pd.DataFrame([{
+                'pos': i,
+                'genes': genes.values,
+                'chromosome': chrom
+                } for i, genes, _,  _ in chrom_window_generator(CNV.gene_var, chrom)
+            ]) for chrom in CHROMOSOMES
+        ])
+
+    gene_locations = {}
+    for g in genenames:
+        _df = genemap[genemap['genes'].apply(lambda x: g in x)]
+
+        # in each window find the distance of the query to the center of teh window we want the window where the gene is closest to center
+        _df['distance'] = _df.genes.apply(lambda x: np.abs(len(x)//2-list(x).index(g)) if g in x else np.inf)
+        the_row = _df.sort_values('distance').iloc[0]
+        pos = the_row['pos']
+        chrom = the_row['chromosome']
+
+        ix = np.logical_and(CNV.CNV_TUMOR.var.chromosome_name == chrom,
+                            CNV.CNV_TUMOR.var.start == pos)
+        gene_locations[g] = np.where(ix)[0][0]
+
+    return gene_locations
+
+# def get_gene_ix_inCNVmap(CNV, genename):
+#     start, end, chrom = CNV.gene_var.loc[genename][['start_position', 'end_position', 'chromosome_name']]
+#     q = CNV.CNV_TUMOR.var.query('chromosome_name==@chrom and @start>=genomic_start and @end<=genomic_end')
+#     q['distance_to_start'] = q['genomic_start'] - start
+#     q['distance_to_end'] = q['genomic_end'] - end
+#     q['distance'] = q['distance_to_start'] + q['distance_to_end']
+#     return q
 
 
 def filter_genes(A, B, min_cells):
