@@ -61,7 +61,7 @@ class inferCNV():
                 self.CNV_NORMAL.obs.drop(key, axis=1, inplace=True)
             self.CNV_NORMAL.obs = self.CNV_NORMAL.obs.merge(cnv_cluster_df, left_index=True, right_index=True, how='left')
 
-    def plotting(self, row_color_fields, which, denoise=True, vmin=0.5, vmax=1.5, figsize=(20, 20), colormaps_row=None, interesting_genes=None):
+    def plotting(self, row_color_fields, which, vmin=0.5, vmax=1.5, figsize=(20, 20), colormaps_row=None, interesting_genes=None):
         """
         plot the heatmap of the CNV profiles of either N or Tv
         """
@@ -74,7 +74,7 @@ class inferCNV():
         if interesting_genes:
             genes_of_interest_dict = get_gene_coords(self, interesting_genes)
             for gene, index in genes_of_interest_dict.items():
-                g.ax_heatmap.vlines(index,0, len(S))
+                g.ax_heatmap.vlines(index, 0, len(S))
                 g.ax_heatmap.text(index, 0, s=gene, fontdict={'size':20}, rotation=90)
         return g
 
@@ -174,6 +174,8 @@ def denoising(CNV, sd_amp=1.5):
 
     denoisedCNV.linkage_normal = CNV.linkage_normal.copy()
     denoisedCNV.linkage_tumor = CNV.linkage_tumor.copy()
+
+    denoisedCNV.gene_var = CNV.gene_var.copy()
     return denoisedCNV
 
 
