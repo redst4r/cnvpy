@@ -8,10 +8,34 @@ import seaborn as sns
 from scipy.sparse import issparse
 import matplotlib.patches as mpatches
 from scipy.cluster.hierarchy import cut_tree
+import scanpy as sc
+# from utils import annotate_genomic_coordinates
+import itertools
 
 CHROMOSOMES = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10',
                '11', '12', '13', '14', '15', '16', '17', '18', '19', '20',
                '21', '22', 'X']
+
+
+def preprocess(adata):
+    """
+    prepares an AnnData obejct to be used by inferCNV
+    - filtering lowly expressed genes
+    - annotating genomic coords
+    - normalizing, log-transform
+
+    returns a copy of the original adata
+    """
+    adata = annotate_genomic_coordinates(adata)
+    sc.pp.filter_genes(adata, min_cells=10)
+    # filter lowly expressed genes
+    ix = np.array(adata.X.mean(0).flatten()>0.1)
+    adata = adata[:, ix]
+    Qlog = adata.copy()
+    sc.pp.normalize_total(Qlog, target_sum=1e6)
+    sc.pp.log1p(Qlog)
+    Qlog.X = Qlog.X.A  # Mar14: actually, better do it here than inside! inside we create two views. and doing .X = .X.A  creates a new object in mem ANYWAYS
+    return Qlog
 
 
 class inferCNV():
@@ -375,7 +399,9 @@ def plotting(S: AnnData, row_color_fields, clustering=None, figsize=(20, 20), vm
     if not isinstance(row_color_fields, list):
         row_color_fields = [row_color_fields]
 
-    chrom_colormap = {c: godsnot_64[i] for i, c in enumerate(CHROMOSOMES)}
+    bw_map = itertools.cycle(['black','grey'])
+    # chrom_colormap = {c: godsnot_64[i] for i, c in enumerate(CHROMOSOMES)}
+    chrom_colormap = {c: color for c, color in zip(CHROMOSOMES, bw_map)}
     chrom_colors = [chrom_colormap[i] for i in S.var.chromosome_name]
 
     color_df = []
@@ -426,3 +452,42 @@ def plotting(S: AnnData, row_color_fields, clustering=None, figsize=(20, 20), vm
     l2.set_title(title=f, prop={'size': 10})
 
     return g
+
+
+# diagnosis_cmap = {
+#     '?': 'grey',  # ?
+#     'D': 'orange', # D
+#     'DT': 'grey', # DT
+#     'M':'#FCE45B', #M
+#     'MDT': 'grey', # mix
+#     'MT': 'grey', # mix
+#     'T': 'red', #T
+#     'TDM':'grey', # mix
+#     'N': 'darkgreen',
+#     'N(stomach)': 'green'
+# }
+
+diagnosis_cmap = {
+    '?': 'grey',  # ?
+    'D': 'blue', # D
+    'DT': 'grey', # DT
+    'M':'#FCE45B', #M
+    'MDT': 'grey', # mix
+    'MT': 'grey', # mix
+    'T': 'red', #T
+    'TDM':'grey', # mix
+    'N': 'darkgreen',
+    'N(stomach)': 'green'
+}
+is_tumor_cmap = {
+    True: 'red',
+    False: 'white'
+}
+is_dysplasia_cmap = {
+    True: 'orange',
+    False: 'white'
+}
+is_metaplasia_cmap = {
+    True: '#FCE45B',
+    False: 'white'
+}

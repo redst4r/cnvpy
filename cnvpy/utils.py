@@ -24,6 +24,7 @@ def annotate_genomic_coordinates(adata, join_on_symbol=False):
     else:
         _tmp = df_biomart[['ensembl_gene_id', 'chromosome_name', 'start_position', 'end_position']].drop_duplicates()
         indexname = adata.var.index.name
+        assert indexname is not None, "var.index is None, cant work with that!"
         var = adata.var.reset_index().merge(_tmp, left_on='gene_ids', right_on='ensembl_gene_id', how='left').set_index(indexname)
 
     # in case we couldnt find info
