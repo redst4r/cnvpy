@@ -1,6 +1,10 @@
 from rnaseqtools.biomart_mapping import biomart_query_all
 import numpy as np
 
+CHROMOSOMES = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10',
+               '11', '12', '13', '14', '15', '16', '17', '18', '19', '20',
+               '21', '22', 'X']
+
 
 def get_genes_in_genomic_region(adata, chrom, pos_start, pos_end):
     genes = adata.var.query(

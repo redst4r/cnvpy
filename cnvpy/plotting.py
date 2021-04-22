@@ -5,7 +5,7 @@ import fastcluster
 import seaborn as sns
 import matplotlib.patches as mpatches
 import itertools
-from cnvpy.my_inferCNV import CHROMOSOMES
+from cnvpy.utils import CHROMOSOMES
 
 
 def is_categorical(array_like):

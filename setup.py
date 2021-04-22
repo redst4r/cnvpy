@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 
-setup(name='scHCLpy',
+setup(name='cnvpy',
       version=0.1,
       description='A few wrappers around tools to determine CNV in scRNAseq data',
       url='http://github.com/redst4r/cnvpy/',
@@ -15,5 +15,10 @@ setup(name='scHCLpy',
           'numpy',
           'scipy',
           'pandas',
+          'fastcluster',
+          'seaborn',
+          'matplotlib',
+          'scanpy',
+          'tqdm'
           ],
       zip_safe=False)

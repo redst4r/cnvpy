@@ -2,20 +2,16 @@ import numpy as np
 import tqdm
 import pandas as pd
 from anndata import AnnData
-from sctools.scplotting import godsnot_64
 import fastcluster
-import seaborn as sns
 from scipy.sparse import issparse
-import matplotlib.patches as mpatches
+
 from scipy.cluster.hierarchy import cut_tree
 import scanpy as sc
 from cnvpy.utils import annotate_genomic_coordinates
 from cnvpy.plotting import plotting
-import itertools
 
-CHROMOSOMES = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10',
-               '11', '12', '13', '14', '15', '16', '17', '18', '19', '20',
-               '21', '22', 'X']
+from cnvpy.utils import CHROMOSOMES
+
 
 
 def preprocess(adata):
