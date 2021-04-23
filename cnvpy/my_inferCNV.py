@@ -1,18 +1,16 @@
+import gc
 import numpy as np
 import tqdm
 import pandas as pd
 from anndata import AnnData
 import fastcluster
 from scipy.sparse import issparse
-
 from scipy.cluster.hierarchy import cut_tree
 import scanpy as sc
-from cnvpy.utils import annotate_genomic_coordinates
+from cnvpy.utils import annotate_genomic_coordinates, CHROMOSOMES
 from cnvpy.plotting import plotting
-
-from cnvpy.utils import CHROMOSOMES
-
-
+from sklearn.metrics import pairwise_distances
+from scipy.spatial.distance import squareform
 
 def preprocess(adata):
     """
@@ -35,8 +33,31 @@ def preprocess(adata):
     return Qlog
 
 
-class inferCNV():
+def sklearn_linkage(X, n_cores, method):
+    """
+    use sklearn to calculate the linkage/clustering of the data
+    - sklearns metric is ALOT faster to compute a distance matrix
+    - feed that distance matrix into fastcluster.linkage()
+    """
+    assert isinstance(X, np.ndarray)
 
+    D = pairwise_distances(X, n_jobs=n_cores)
+    D = (D + D.T) / 2  # symmetrize (it's symmetric, but machine precision is an issue here)
+    P = squareform(D)
+
+    # get rid of the giant matrix D
+    del D
+    gc.collect()
+
+    linkage = fastcluster.linkage(P, method=method)
+    return linkage
+
+
+class inferCNV():
+    """
+    Inferring CopyNumberVariations from scRNAseq data.
+    Based on the `inferCNV` R-package
+    """
     def __init__(self, verbose=True):
         self.CNV_NORMAL = None  # where we store the smoothed data
         self.CNV_TUMOR = None
@@ -56,12 +77,24 @@ class inferCNV():
             ref_groups,
             verbose=self.verbose)
 
-    def cluster(self):
+    def cluster(self, use_sklearn=True):
         """
         cluster the CNV profiles of both N/T
         """
-        self.linkage_normal = fastcluster.linkage(self.CNV_NORMAL.X, method='ward')
-        self.linkage_tumor = fastcluster.linkage(self.CNV_TUMOR.X, method='ward')
+        method = 'ward'
+        n_cores = 2
+        if use_sklearn:
+            if self.verbose:
+                print('Clustering CNV normal (sklearn)')
+            self.linkage_normal = sklearn_linkage(self.CNV_NORMAL.X, n_cores=n_cores, method=method)
+
+            if self.verbose:
+                print('Clustering CNV tumor (sklearn)')
+            self.linkage_tumor = sklearn_linkage(self.CNV_TUMOR.X, n_cores=n_cores, method=method)
+
+        else:
+            self.linkage_normal = fastcluster.linkage(self.CNV_NORMAL.X, method=method)
+            self.linkage_tumor = fastcluster.linkage(self.CNV_TUMOR.X, method=method)
 
     def cut_tree(self, n_clusters, which, key='cnv_cluster'):
 
@@ -103,7 +136,6 @@ class inferCNV():
         """
         truncating the hierachical tree of the CNV clusters.
         Returns dataframe which annotate for each cell the CNV cluster
-
         """
         N_clusters = cut_tree(self.linkage_normal, n_clusters=n_clusters_normal).flatten().astype('str')
         T_clusters = cut_tree(self.linkage_tumor, n_clusters=n_clusters_tumor).flatten().astype('str')
@@ -123,18 +155,19 @@ def get_gene_coords(CNV, genenames):
     # get all gene-names of the windows
     genemap = pd.concat([
         pd.DataFrame([{
-                'pos': i,
-                'genes': genes.values,
-                'chromosome': chrom
-                } for i, genes, _,  _ in chrom_window_generator(CNV.gene_var, chrom)
-            ]) for chrom in CHROMOSOMES
+            'pos': i,
+            'genes': genes.values,
+            'chromosome': chrom
+            } for i, genes, _,  _ in chrom_window_generator(CNV.gene_var, chrom)
+        ]) for chrom in CHROMOSOMES
         ])
 
     gene_locations = {}
     for g in genenames:
         _df = genemap[genemap['genes'].apply(lambda x: g in x)]
 
-        # in each window find the distance of the query to the center of teh window we want the window where the gene is closest to center
+        # in each window find the distance of the query to the
+        # center of teh window we want the window where the gene is closest to center
         _df['distance'] = _df.genes.apply(lambda x: np.abs(len(x)//2-list(x).index(g)) if g in x else np.inf)
         the_row = _df.sort_values('distance').iloc[0]
         pos = the_row['pos']
@@ -193,8 +226,10 @@ def denoising(CNV, sd_amp=1.5):
     denoisedCNV.CNV_NORMAL = CNV.CNV_NORMAL.copy()
     denoisedCNV.CNV_NORMAL.X[mask] = mean_ref_vals
 
-    denoisedCNV.linkage_normal = CNV.linkage_normal.copy()
-    denoisedCNV.linkage_tumor = CNV.linkage_tumor.copy()
+    if CNV.linkage_normal is not None:
+        denoisedCNV.linkage_normal = CNV.linkage_normal.copy()
+    if CNV.linkage_tumor is not None:
+        denoisedCNV.linkage_tumor = CNV.linkage_tumor.copy()
 
     denoisedCNV.gene_var = CNV.gene_var.copy()
     return denoisedCNV
@@ -289,6 +324,8 @@ def smoothed_expression_all_chromosomes(adata, gene_window=101):
             pos.append(pos_df)
     X = np.concatenate(X, axis=1)
     pos = pd.concat(pos)
+    pos['index'] = "chr" + pos['chromosome_name'] + "_" + pos['start'].astype(str)
+    pos = pos.set_index('index').reset_index() # actually, this can screw up the chromosome ordering, reset assures a int-index that just runs along the chrom
     return X, pos  # , chrom_indicator
 
 

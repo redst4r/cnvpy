@@ -19,6 +19,7 @@ setup(name='cnvpy',
           'seaborn',
           'matplotlib',
           'scanpy',
-          'tqdm'
+          'tqdm',
+          'scikit-learn'
           ],
       zip_safe=False)
