@@ -11,8 +11,9 @@ from cnvpy.utils import annotate_genomic_coordinates, CHROMOSOMES
 from cnvpy.plotting import plotting
 from sklearn.metrics import pairwise_distances
 from scipy.spatial.distance import squareform
+from sctools import adata_merge
 
-def preprocess(adata):
+def preprocess(adata, low_expression_threshold=0.1):
     """
     prepares an AnnData obejct to be used by inferCNV
     - filtering lowly expressed genes
@@ -24,7 +25,7 @@ def preprocess(adata):
     adata = annotate_genomic_coordinates(adata)
     sc.pp.filter_genes(adata, min_cells=10)
     # filter lowly expressed genes
-    ix = np.array(adata.X.mean(0).flatten()>0.1)
+    ix = np.array(adata.X.mean(0).flatten() > low_expression_threshold)
     adata = adata[:, ix]
     Qlog = adata.copy()
     sc.pp.normalize_total(Qlog, target_sum=1e6)
