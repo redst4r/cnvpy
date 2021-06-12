@@ -12,6 +12,9 @@ from cnvpy.plotting import plotting
 from sklearn.metrics import pairwise_distances
 from scipy.spatial.distance import squareform
 from sctools import adata_merge
+from scipy.sparse import csr_matrix
+from scipy import linalg
+
 
 def preprocess(adata, low_expression_threshold=0.1):
     """
@@ -60,7 +63,7 @@ class inferCNV():
     Based on the `inferCNV` R-package
     """
 
-    def __init__(self, verbose=True):
+    def __init__(self, verbose=True, mode='toeplitz'):
         self.CNV_NORMAL = None  # where we store the smoothed data
         self.CNV_TUMOR = None
         self.linkage_normal = None
@@ -68,6 +71,7 @@ class inferCNV():
         self.linkage_joint = None
         self.verbose = verbose
         self.gene_var = None  # the adata.var from the original data; used to look up genomic coordinates
+        self.mode = mode
 
     def infer(self, adata, ref_field, ref_groups):
         """
@@ -78,7 +82,8 @@ class inferCNV():
             adata,
             ref_field,
             ref_groups,
-            verbose=self.verbose)
+            verbose=self.verbose,
+            mode=self.mode)
 
     def cluster(self, use_sklearn=True):
         """
@@ -276,6 +281,74 @@ def chrom_window_generator(gene_var, chromosome, window_size=101, offset=2):
         yield i, genes, genomic_start, genomic_end
 
 
+def chrom_window_generator_matrix(gene_var, chromosome, window_size=101, offset=2):
+    """
+    returns a Toeplitz matrix for the convolution/smoothing of the chromosome
+    and a dataframe, with information about the genes aggregated
+
+    analogous to `chrom_window_generator()`
+    """
+    assert window_size % 2 == 1, 'gene window must be odd number'
+    q = gene_var.query('chromosome_name==@chromosome').sort_values('start_position')
+    n_genes = len(q)
+    weight_scheme = get_pyramid_weighting(window_size)
+
+    # the first colum will have the full weight vector + `padding` zeros
+    padding = np.zeros(n_genes - len(weight_scheme), weight_scheme.dtype)
+    first_col = np.r_[weight_scheme, padding]
+    first_row = np.r_[weight_scheme[0], padding]
+    H = linalg.toeplitz(first_col, first_row)
+    H = csr_matrix(H[:,::offset])  # striding the matrix
+
+    pos = []
+    for counter, start in enumerate(range(0, len(q)-window_size+1, offset)):
+        genes = q.iloc[start:(start+window_size)].index
+        genomic_start = q.loc[genes[0]].start_position
+        genomic_end = q.loc[genes[-1]].end_position
+
+        center_gene = genes[(window_size-1)//2]
+
+        # index_list.append(np.arange(i,(i+window_size)))
+        pos.append({
+            'genes': genes.tolist(),
+            'genomic_start': genomic_start,
+            'genomic_end': genomic_end,
+            'start': start,
+            'end': start+window_size,
+            'middle': start + (window_size - 1) // 2,
+            'middle_gene': center_gene,
+            'ix': counter,
+        })
+    pos = pd.DataFrame(pos)
+    pos['chromosome_name'] = chromosome
+    assert H.shape[1] == len(pos)
+    assert H.shape[0] == len(q)
+
+    return H, pos
+
+
+
+def smoothed_expression_matrix(adata, chromosome, gene_window=101, offset=2):
+    """
+    smoothing gene expression on a chromosome via a sliding window
+    Implementation is based on convolution and is usually alot faster than `smoothed_expression()`
+
+    """
+    assert gene_window % 2 == 1, 'gene window must be odd number'
+
+    # create the convolution-toeplitz matrix
+    H, pos = chrom_window_generator_matrix(adata.var, chromosome, window_size=gene_window, offset=offset)
+
+    # make sure that the expression values are sorted in chromosomal order.
+    # the convolution DOES NOT check this!!
+    sorted_genes = adata.var.query('chromosome_name==@chromosome').sort_values('start_position').index.tolist()
+    X = adata[:, sorted_genes].X
+
+    # the actual convolution
+    smoothed = X @ H
+    return pos, smoothed
+
+
 def smoothed_expression(adata, chromosome, gene_window=101, offset=2):
     """
     smoothing gene expression on a chromosome via a sliding window
@@ -331,14 +404,18 @@ def smoothed_expression(adata, chromosome, gene_window=101, offset=2):
     return pos, smoothed
 
 
-def smoothed_expression_all_chromosomes(adata, gene_window=101):
+def smoothed_expression_all_chromosomes(adata, gene_window=101, mode='toeplitz'):
     """
     smoothing gene expression on a chromosome via a sliding window
     """
     X = []
     pos = []
     for chromosome in tqdm.tqdm(CHROMOSOMES):
-        pos_df, s = smoothed_expression(adata, chromosome, gene_window)
+
+        if mode=='toeplitz':
+            pos_df, s = smoothed_expression_matrix(adata, chromosome, gene_window)
+        else:
+            pos_df, s = smoothed_expression(adata, chromosome, gene_window)
         if isinstance(s, np.ndarray):  # not sure what htat is
             X.append(s)
             pos.append(pos_df)
@@ -407,7 +484,7 @@ def _postprocess(smoothed_normal, smoothed_tumor):
     return exp_relative_normal, exp_relative_tumor
 
 
-def my_inferCNV(adata, ref_field, ref_groups, verbose=True):
+def my_inferCNV(adata, ref_field, ref_groups, verbose=True, mode='toeplitz'):
 
     # Note: the .values is important otherwise the `in` doesnt work!?
     assert all([g in adata.obs[ref_field].values for g in ref_groups]), f"some groups dont exist in {ref_field}"
@@ -429,10 +506,10 @@ def my_inferCNV(adata, ref_field, ref_groups, verbose=True):
     Qnormal, Qtumor = _preprocess(Qnormal, Qtumor)
     if verbose:
         print('smoothing Tumor')
-    smoothed_tumor, tumor_chr = smoothed_expression_all_chromosomes(Qtumor)
+    smoothed_tumor, tumor_chr = smoothed_expression_all_chromosomes(Qtumor, mode=mode)
     if verbose:
         print('smoothing normal')
-    smoothed_normal, normal_chr = smoothed_expression_all_chromosomes(Qnormal)
+    smoothed_normal, normal_chr = smoothed_expression_all_chromosomes(Qnormal, mode=mode)
 
     if verbose:
         print('postprocessing')
