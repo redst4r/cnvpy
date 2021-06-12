@@ -85,7 +85,7 @@ class inferCNV():
             verbose=self.verbose,
             mode=self.mode)
 
-    def cluster(self, use_sklearn=True):
+    def cluster(self, use_sklearn=True, which='all'):
         """
         cluster the CNV profiles of both N/T
 
@@ -94,24 +94,30 @@ class inferCNV():
         method = 'ward'
         n_cores = 2
         if use_sklearn:
-            if self.verbose:
-                print('Clustering CNV normal (sklearn)')
-            self.linkage_normal = sklearn_linkage(self.CNV_NORMAL.X, n_cores=n_cores, method=method)
 
-            if self.verbose:
-                print('Clustering CNV tumor (sklearn)')
-            self.linkage_tumor = sklearn_linkage(self.CNV_TUMOR.X, n_cores=n_cores, method=method)
+            if which == 'normal' or which == 'all':
+                if self.verbose:
+                    print('Clustering CNV normal (sklearn)')
+                self.linkage_normal = sklearn_linkage(self.CNV_NORMAL.X, n_cores=n_cores, method=method)
 
-            if self.verbose:
-                print('Clustering CNV jointly (sklearn)')
+            if which == 'tumor' or which == 'all':
+                if self.verbose:
+                    print('Clustering CNV tumor (sklearn)')
+                self.linkage_tumor = sklearn_linkage(self.CNV_TUMOR.X, n_cores=n_cores, method=method)
+
+            if which == 'joint' or which == 'all':
+                if self.verbose:
+                    print('Clustering CNV jointly (sklearn)')
                 X = np.concatenate([self.CNV_TUMOR.X, self.CNV_NORMAL.X], axis=0)
-            self.linkage_joint = sklearn_linkage(X, n_cores=n_cores, method=method)
+                self.linkage_joint = sklearn_linkage(X, n_cores=n_cores, method=method)
 
         else:
             self.linkage_normal = fastcluster.linkage(self.CNV_NORMAL.X, method=method)
             self.linkage_tumor = fastcluster.linkage(self.CNV_TUMOR.X, method=method)
-            X = np.concatenate([self.CNV_TUMOR.X, self.CNV_NORMAL.X], axis=0)
+            X = np.concatenate([self.CNV_NORMAL.X, self.CNV_TUMOR.X], axis=0)
             self.linkage_joint = fastcluster.linkage(X, method=method)
+        if self.verbose:
+            print('Done clustering')
 
     def cut_tree(self, n_clusters, which, key='cnv_cluster'):
         # TODO this doesnt cover which=="joint"
@@ -141,13 +147,13 @@ class inferCNV():
 
         if which == 'normal':
             S = self.CNV_NORMAL
-            clustering =  self.linkage_normal
+            clustering = self.linkage_normal
         elif which == 'tumor':
             S = self.CNV_TUMOR
-            clustering =  self.linkage_tumor
+            clustering = self.linkage_tumor
         else:
             S = adata_merge([self.CNV_NORMAL, self.CNV_TUMOR])
-            clustering =  self.linkage_joint
+            clustering = self.linkage_joint
 
         g = plotting(S, row_color_fields, clustering=clustering, vmin=vmin, vmax=vmax, figsize=figsize, colormaps_row=colormaps_row)
         if interesting_genes:
