@@ -59,11 +59,13 @@ class inferCNV():
     Inferring CopyNumberVariations from scRNAseq data.
     Based on the `inferCNV` R-package
     """
+
     def __init__(self, verbose=True):
         self.CNV_NORMAL = None  # where we store the smoothed data
         self.CNV_TUMOR = None
         self.linkage_normal = None
         self.linkage_tumor = None
+        self.linkage_joint = None
         self.verbose = verbose
         self.gene_var = None  # the adata.var from the original data; used to look up genomic coordinates
 
@@ -81,6 +83,8 @@ class inferCNV():
     def cluster(self, use_sklearn=True):
         """
         cluster the CNV profiles of both N/T
+
+        note that SKLEARN is much faster (mostly builidng the distance matrix)
         """
         method = 'ward'
         n_cores = 2
@@ -93,12 +97,19 @@ class inferCNV():
                 print('Clustering CNV tumor (sklearn)')
             self.linkage_tumor = sklearn_linkage(self.CNV_TUMOR.X, n_cores=n_cores, method=method)
 
+            if self.verbose:
+                print('Clustering CNV jointly (sklearn)')
+                X = np.concatenate([self.CNV_TUMOR.X, self.CNV_NORMAL.X], axis=0)
+            self.linkage_joint = sklearn_linkage(X, n_cores=n_cores, method=method)
+
         else:
             self.linkage_normal = fastcluster.linkage(self.CNV_NORMAL.X, method=method)
             self.linkage_tumor = fastcluster.linkage(self.CNV_TUMOR.X, method=method)
+            X = np.concatenate([self.CNV_TUMOR.X, self.CNV_NORMAL.X], axis=0)
+            self.linkage_joint = fastcluster.linkage(X, method=method)
 
     def cut_tree(self, n_clusters, which, key='cnv_cluster'):
-
+        # TODO this doesnt cover which=="joint"
         clusters = cut_tree(self.linkage_tumor, n_clusters=n_clusters).flatten()
         cnv_cluster_df = pd.DataFrame(
             clusters,
@@ -120,10 +131,18 @@ class inferCNV():
         """
         plot the heatmap of the CNV profiles of either N or Tv
         """
-        assert which in ['normal', 'tumor']
+        assert which in ['normal', 'tumor', 'joint']
         assert self.linkage_normal is not None and self.linkage_tumor is not None, "not clustered yet, run .cluster()"
-        S = self.CNV_NORMAL if which == 'normal' else self.CNV_TUMOR
-        clustering = self.linkage_normal if which == 'normal' else self.linkage_tumor
+
+        if which == 'normal':
+            S = self.CNV_NORMAL
+            clustering =  self.linkage_normal
+        elif which == 'tumor':
+            S = self.CNV_TUMOR
+            clustering =  self.linkage_tumor
+        else:
+            S = adata_merge([self.CNV_NORMAL, self.CNV_TUMOR])
+            clustering =  self.linkage_joint
 
         g = plotting(S, row_color_fields, clustering=clustering, vmin=vmin, vmax=vmax, figsize=figsize, colormaps_row=colormaps_row)
         if interesting_genes:
