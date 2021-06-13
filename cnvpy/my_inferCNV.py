@@ -304,7 +304,7 @@ def chrom_window_generator_matrix(gene_var, chromosome, window_size=101, offset=
     first_col = np.r_[weight_scheme, padding]
     first_row = np.r_[weight_scheme[0], padding]
     H = linalg.toeplitz(first_col, first_row)
-    H = csr_matrix(H[:,::offset])  # striding the matrix
+    H = csr_matrix(H[:, ::offset])  # striding the matrix
 
     pos = []
     for counter, start in enumerate(range(0, len(q)-window_size+1, offset)):
@@ -342,6 +342,7 @@ def smoothed_expression_matrix(adata, chromosome, gene_window=101, offset=2):
     """
     assert gene_window % 2 == 1, 'gene window must be odd number'
 
+    assert adata.var.query('chromosome_name==@chromosome').shape[0] >= gene_window, "gene window is bigger than the chromosome!"
     # create the convolution-toeplitz matrix
     H, pos = chrom_window_generator_matrix(adata.var, chromosome, window_size=gene_window, offset=offset)
 
@@ -360,6 +361,8 @@ def smoothed_expression(adata, chromosome, gene_window=101, offset=2):
     smoothing gene expression on a chromosome via a sliding window
     """
     assert gene_window % 2 == 1, 'gene window must be odd number'
+    assert adata.var.query('chromosome_name==@chromosome').shape[0] >= gene_window, "gene window is bigger than the chromosome!"
+
     # constant_weighting = np.ones(gene_window)
     # constant_weighting = constant_weighting / constant_weighting.sum()
 
@@ -418,7 +421,12 @@ def smoothed_expression_all_chromosomes(adata, gene_window=101, mode='toeplitz')
     pos = []
     for chromosome in tqdm.tqdm(CHROMOSOMES):
 
-        if mode=='toeplitz':
+        # sometimes the window length is bigger than the chromosome, skip that
+        if adata.var.query('chromosome_name==@chromosome').shape[0] < gene_window:
+            print(f'skipping chromosome {chromosome}, which is shorter than window length {gene_window}')
+            continue
+
+        if mode == 'toeplitz':
             pos_df, s = smoothed_expression_matrix(adata, chromosome, gene_window)
         else:
             pos_df, s = smoothed_expression(adata, chromosome, gene_window)
