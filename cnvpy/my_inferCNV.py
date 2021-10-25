@@ -33,6 +33,8 @@ def preprocess(adata, low_expression_threshold=0.1):
     sc.pp.normalize_total(Qlog, target_sum=1e6)
     sc.pp.log1p(Qlog)
     Qlog.X = Qlog.X.A  # Mar14: actually, better do it here than inside! inside we create two views. and doing .X = .X.A  creates a new object in mem ANYWAYS
+
+    Qlog.uns['cnv_preprocessed'] = True
     return Qlog
 
 
@@ -437,14 +439,16 @@ def my_inferCNV(adata, ref_field, ref_groups, verbose=True, mode='toeplitz'):
     # Note: the .values is important otherwise the `in` doesnt work!?
     assert all([g in adata.obs[ref_field].values for g in ref_groups]), f"some groups dont exist in {ref_field}"
 
-    # check if is a count matrix: we want lognormlaized!
-    d = adata.X-adata.X.astype(int)
-    if issparse(adata.X):
-        if d.nnz == 0:
-            raise ValueError('Data should be normlaized and logtransformed!')
-    else:
-        if np.all(d == 0):
-            raise ValueError('Data should be normlaized and logtransformed!')
+
+    assert adata.uns['cnv_preprocessed']
+    # # check if is a count matrix: we want lognormlaized!
+    # d = adata.X-adata.X.astype(int)
+    # if issparse(adata.X):
+    #     if d.nnz == 0:
+    #         raise ValueError('Data should be normlaized and logtransformed!')
+    # else:
+    #     if np.all(d == 0):
+    #         raise ValueError('Data should be normlaized and logtransformed!')
 
     if verbose:
         print('Preprocessing')
