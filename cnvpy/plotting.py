@@ -72,6 +72,28 @@ def plotting(S: AnnData, row_color_fields, clustering=None, figsize=(20, 20), vm
     return g
 
 
+#
+# import plotly.graph_objects as go
+# df_reordered = df_X.copy()
+#
+# ix_row = leaves_list(Z_row)
+# ix_col = leaves_list(Z_col)
+# df_reordered = df_reordered.iloc[ix_row]
+# df_reordered = df_reordered.iloc[:, ix_col]
+#
+# fig = go.Figure(data=go.Heatmap(
+#                    z=df_reordered.T,
+#                    x=df_reordered.index.tolist(),
+#                    y=['L'+ _ for _ in df_reordered.columns]
+# ),
+# )
+# fig.update_layout(width=3000, height=1000)
+# fig.show()
+
+
+
+
+
 # diagnosis_cmap = {
 #     '?': 'grey',  # ?
 #     'D': 'orange', # D
@@ -95,7 +117,9 @@ diagnosis_cmap = {
     'T': 'red',  # T
     'TDM': 'grey',  # mix
     'N': 'darkgreen',
-    'N(stomach)': 'green'
+    'NE': 'darkgreen',
+    'N(stomach)': 'green',
+    'NS': 'green'
 }
 is_tumor_cmap = {
     True: 'red',

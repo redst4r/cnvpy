@@ -19,6 +19,7 @@ setup(name='cnvpy',
           'seaborn',
           'matplotlib',
           'scanpy',
+          'anndata',
           'tqdm',
           'scikit-learn'
           ],

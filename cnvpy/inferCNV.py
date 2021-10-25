@@ -26,6 +26,36 @@ def adata2inferCNV(adata, annotation_field, folder):
     return tempdir
 
 
+def adata2inferCNV_R_Call(folder, gene_pos_file, refgroups):
+    """
+    this assumes running it out of docker, with /home/mstrasse/TB4/inferCNVtest
+    mounted to /data
+
+    `docker run --rm -it -v /home/mstrasse/TB4/inferCNVtest:/data trinityctat/infercnv:latest bash`
+    """
+    refgroup_str = ','.join([f'"{g}"' for g in refgroups])
+    Rcmd = f"""
+library(infercnv)
+# create the infercnv object
+infercnv_obj = CreateInfercnvObject(raw_counts_matrix="/data/{folder}/data.txt",
+                                    annotations_file="/data/{folder}/annotation.txt",
+                                    delim="\\t",
+                                    gene_order_file="/data/{gene_pos_file}",
+                                    ref_group_names=c({refgroup_str}))
+
+
+infercnv_obj = infercnv::run(infercnv_obj,
+                             cutoff=0.1,  # use 1 for smart-seq, 0.1 for 10x-genomics
+                             out_dir="/data/{folder}/output_dir",  # dir is auto-created for storing outputs
+                             cluster_by_groups=F,   # cluster
+                             denoise=T,
+                             HMM=T,
+                             plot_steps=F
+                             )
+    """
+    return Rcmd
+
+
 def create_docker_call(tempdir, reference_group_name):
     """
     docker call for inferCNV
