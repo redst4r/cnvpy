@@ -25,10 +25,14 @@ def preprocess(adata, low_expression_threshold=0.1):
     returns a copy of the original adata
     """
     adata = annotate_genomic_coordinates(adata)
-    sc.pp.filter_genes(adata, min_cells=10)
+    
+    if False:
+        sc.pp.filter_genes(adata, min_cells=10)
+        
     # filter lowly expressed genes
     ix = np.array(adata.X.mean(0).flatten() > low_expression_threshold)
     adata = adata[:, ix]
+    print(f'Filtering lowly expressed genes: {len(ix.flatten())}->{ix.sum()}')
     Qlog = adata.copy()
     sc.pp.normalize_total(Qlog, target_sum=1e6)
     sc.pp.log1p(Qlog)
@@ -92,6 +96,8 @@ class inferCNV():
 
         note that SKLEARN is much faster (mostly builidng the distance matrix)
         """
+        assert which in ['all', 'normal','tumor','joint']
+
         method = 'ward'
         n_cores = 2
         if use_sklearn:
@@ -144,7 +150,6 @@ class inferCNV():
         plot the heatmap of the CNV profiles of either N or Tv
         """
         assert which in ['normal', 'tumor', 'joint']
-        assert self.linkage_normal is not None and self.linkage_tumor is not None, "not clustered yet, run .cluster()"
 
         if which == 'normal':
             assert self.linkage_normal is not None, "normal not clustered yet, run .cluster()"
@@ -349,7 +354,7 @@ def smoothed_expression_matrix(adata, chromosome, gene_window=101, offset=2):
     return pos, smoothed
 
 
-def smoothed_expression_all_chromosomes(adata, gene_window=101, mode='toeplitz'):
+def smoothed_expression_all_chromosomes(adata, gene_window=101, mode='toeplitz', offset=2):
     """
     smoothing gene expression on a chromosome via a sliding window
     """
@@ -363,7 +368,7 @@ def smoothed_expression_all_chromosomes(adata, gene_window=101, mode='toeplitz')
             continue
 
         if mode == 'toeplitz':
-            pos_df, s = smoothed_expression_matrix(adata, chromosome, gene_window)
+            pos_df, s = smoothed_expression_matrix(adata, chromosome, gene_window, offset=offset)
         else:
             pos_df, s = smoothed_expression(adata, chromosome, gene_window)
         if isinstance(s, np.ndarray):  # not sure what htat is
@@ -389,8 +394,11 @@ def _preprocess(Qnormal, Qtumor):
     - centering on the reference
     - clipping
     """
-
+    
     gene_ix = filter_genes(Qnormal, Qtumor, 10)
+    genes_before_filter = Qnormal.shape[1]
+    genes_after_filter = len(gene_ix)
+    print(f'Filtering genes expressed in more than 10 cells. before {genes_before_filter} after {genes_after_filter}')
     Qnormal = Qnormal[:, gene_ix]
     Qtumor = Qtumor[:, gene_ix]
 
@@ -434,22 +442,13 @@ def _postprocess(smoothed_normal, smoothed_tumor):
     return exp_relative_normal, exp_relative_tumor
 
 
-def my_inferCNV(adata, ref_field, ref_groups, verbose=True, mode='toeplitz'):
+from typing import Tuple
+def my_inferCNV(adata, ref_field, ref_groups, verbose=True, mode='toeplitz', gene_window=101, offset=2) -> Tuple[AnnData, AnnData]:
 
     # Note: the .values is important otherwise the `in` doesnt work!?
     assert all([g in adata.obs[ref_field].values for g in ref_groups]), f"some groups dont exist in {ref_field}"
-
-
     assert adata.uns['cnv_preprocessed']
-    # # check if is a count matrix: we want lognormlaized!
-    # d = adata.X-adata.X.astype(int)
-    # if issparse(adata.X):
-    #     if d.nnz == 0:
-    #         raise ValueError('Data should be normlaized and logtransformed!')
-    # else:
-    #     if np.all(d == 0):
-    #         raise ValueError('Data should be normlaized and logtransformed!')
-
+     
     if verbose:
         print('Preprocessing')
 
@@ -458,16 +457,20 @@ def my_inferCNV(adata, ref_field, ref_groups, verbose=True, mode='toeplitz'):
     Qnormal, Qtumor = _preprocess(Qnormal, Qtumor)
     if verbose:
         print('smoothing Tumor')
-    smoothed_tumor, tumor_chr = smoothed_expression_all_chromosomes(Qtumor, mode=mode)
+    smoothed_tumor, tumor_chr = smoothed_expression_all_chromosomes(Qtumor, mode=mode, gene_window=gene_window, offset=offset)
     if verbose:
         print('smoothing normal')
-    smoothed_normal, normal_chr = smoothed_expression_all_chromosomes(Qnormal, mode=mode)
+    smoothed_normal, normal_chr = smoothed_expression_all_chromosomes(Qnormal, mode=mode, gene_window=gene_window, offset=offset)
 
     if verbose:
         print('postprocessing')
     exp_relative_normal, exp_relative_tumor = _postprocess(smoothed_normal, smoothed_tumor)
-
+    
     CNV_TUMOR = AnnData(exp_relative_tumor, obs=Qtumor.obs, var=tumor_chr)
     CNV_NORMAL = AnnData(exp_relative_normal, obs=Qnormal.obs, var=normal_chr)
 
+    # pad with zeros, so that sorting the index preserves the genomic order
+    CNV_NORMAL.var.index = CNV_NORMAL.var.index.map(lambda x: x.zfill(8))
+    CNV_TUMOR.var.index = CNV_TUMOR.var.index.map(lambda x: x.zfill(8))
+    
     return CNV_NORMAL, CNV_TUMOR

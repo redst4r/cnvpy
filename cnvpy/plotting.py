@@ -12,7 +12,16 @@ def is_categorical(array_like):
     return array_like.dtype.name == 'category'
 
 
-def plotting(S: AnnData, row_color_fields, clustering=None, figsize=(20, 20), vmin=0.5, vmax=1.5, plot_dendrogram=True, colormaps_row=None):
+def plotting(
+    S: AnnData,
+    row_color_fields,
+    clustering=None,
+    figsize=(20, 20),
+    vmin=0.5,
+    vmax=1.5,
+    plot_dendrogram=True,
+    colormaps_row=None,
+    colormap_cnv='bwr'):
 
     if not isinstance(row_color_fields, list):
         row_color_fields = [row_color_fields]
@@ -48,7 +57,7 @@ def plotting(S: AnnData, row_color_fields, clustering=None, figsize=(20, 20), vm
 
     print('Drawing')
     X = pd.DataFrame(S.X, index=S.obs.index)
-    g = sns.clustermap(X, col_cluster=False, cmap="bwr",
+    g = sns.clustermap(X, col_cluster=False, cmap=colormap_cnv,
                        vmin=vmin, vmax=vmax,
                        row_linkage=clustering,
                        col_colors=chrom_colors,
