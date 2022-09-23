@@ -78,7 +78,7 @@ class inferCNV():
         self.gene_var = None  # the adata.var from the original data; used to look up genomic coordinates
         self.mode = mode
 
-    def infer(self, adata, ref_field, ref_groups):
+    def infer(self, adata, ref_field, ref_groups, gene_window=101, offset=2, normalize_mode='mean_center'):
         """
         running the inferCNV method, basically smoothing along the chromosomes
         """
@@ -88,7 +88,10 @@ class inferCNV():
             ref_field,
             ref_groups,
             verbose=self.verbose,
-            mode=self.mode)
+            mode=self.mode,
+            normalize_mode=normalize_mode,
+            gene_window=gene_window,
+            offset=offset)
 
     def cluster(self, use_sklearn=True, which='all'):
         """
@@ -388,13 +391,16 @@ def split_tumor_normal(adata, ref_field, ref_groups):
     return Qnormal, Qtumor
 
 
-def _preprocess(Qnormal, Qtumor):
+def _preprocess(Qnormal, Qtumor, mode):
     """
+    :param mode: either mean_center or quantile_mask:
+        - mean-center: subtracts the mean of the reference from Qnormal and Qtumor (adjusting for uneven gene expression along the chromosome
+        - quantile_mask: uses the reference to estimate the 1/99 percent quantile at each locus. sets everything in that range to zero
     - splitting into reference samples and tumor samples
     - centering on the reference
     - clipping
     """
-    
+    assert mode in ['mean_center', 'quantile_mask'] 
     gene_ix = filter_genes(Qnormal, Qtumor, 10)
     genes_before_filter = Qnormal.shape[1]
     genes_after_filter = len(gene_ix)
@@ -408,10 +414,22 @@ def _preprocess(Qnormal, Qtumor):
         Qnormal.X = Qnormal.X.A
         Qtumor.X = Qtumor.X.A
 
-    ref_mean = Qnormal.X.mean(0, keepdims=True)
-    Qnormal.X = Qnormal.X - ref_mean
-    Qtumor.X = Qtumor.X - ref_mean
+    if mode=="mean_center":
+        ref_mean = Qnormal.X.mean(0, keepdims=True)
+        Qnormal.X = Qnormal.X - ref_mean
+        Qtumor.X = Qtumor.X - ref_mean
+    elif mode == "quantile_mask":
+        q1_normal, q99_normal = np.percentile(Qnormal.X, [1,99], axis=0)
+        q1_tumor, q99_tumor = np.percentile(Qtumor.X, [1,99], axis=0)
 
+        normal_mask = np.logical_and(Qnormal.X < q99_normal, Qnormal.X > q1_normal)
+        tumor_mask = np.logical_and(Qtumor.X < q99_tumor, Qtumor.X > q1_tumor)
+
+        Qnormal.X[normal_mask] = 0
+        Qtumor.X[tumor_mask] = 0
+
+    else: 
+        raise ValueError(f"unknown mode {mode}")
     # clipping
     Qnormal.X = np.clip(Qnormal.X, -3, 3)
     Qtumor.X = np.clip(Qtumor.X, -3, 3)
@@ -443,7 +461,19 @@ def _postprocess(smoothed_normal, smoothed_tumor):
 
 
 from typing import Tuple
-def my_inferCNV(adata, ref_field, ref_groups, verbose=True, mode='toeplitz', gene_window=101, offset=2) -> Tuple[AnnData, AnnData]:
+def my_inferCNV(adata, ref_field, 
+        ref_groups, 
+        verbose=True, 
+        mode='toeplitz', 
+        gene_window=101, 
+        offset=2, 
+        normalize_mode='mean_center') -> Tuple[AnnData, AnnData]:
+    """
+    :param mode: either mean_center or quantile_mask:
+        - mean-center: subtracts the mean of the reference from Qnormal and Qtumor (adjusting for uneven gene expression along the chromosome
+        - quantile_mask: uses the reference to estimate the 1/99 percent quantile at each locus. sets everything in that range to zero
+    - splitting into reference samples and tumor samples
+    """
 
     # Note: the .values is important otherwise the `in` doesnt work!?
     assert all([g in adata.obs[ref_field].values for g in ref_groups]), f"some groups dont exist in {ref_field}"
@@ -454,7 +484,7 @@ def my_inferCNV(adata, ref_field, ref_groups, verbose=True, mode='toeplitz', gen
 
     Qnormal, Qtumor = split_tumor_normal(adata, ref_field, ref_groups)
 
-    Qnormal, Qtumor = _preprocess(Qnormal, Qtumor)
+    Qnormal, Qtumor = _preprocess(Qnormal, Qtumor, normalize_mode)
     if verbose:
         print('smoothing Tumor')
     smoothed_tumor, tumor_chr = smoothed_expression_all_chromosomes(Qtumor, mode=mode, gene_window=gene_window, offset=offset)
